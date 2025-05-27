@@ -1,0 +1,70 @@
+{
+  "name": "go-to-step-bdd",
+  "displayName": "Go to BDD Step Definition",
+  "description": "Navigate between feature files and step definitions in pytest-bdd and behave frameworks.",
+  "version": "0.0.1",
+  "publisher": "John Budnik",
+  "author": "John Budnik",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": ["Testing"],
+  "activationEvents": ["onLanguage:feature"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "go-to-step-bdd.goToStepDefinition",
+        "title": "Go to BDD Step Definition"
+      }
+    ],
+    "configuration": {
+      "properties": {
+        "goToBdd.stepDefinitionPaths": {
+          "type": "array",
+          "default": ["**/*.py"],
+          "description": "Files containing step definitions"
+        },
+        "goToBdd.showDebugLogs": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show debug logs"
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "go-to-step-bdd.goToStepDefinition",
+        "key": "ctrl+b",
+        "mac": "cmd+b",
+        "when": "editorTextFocus && editorLangId == 'feature'"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "go-to-step-bdd.goToStepDefinition",
+          "when": "editorTextFocus && editorLangId == 'feature'",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.100.0",
+    "@types/node": "20.x",
+    "typescript": "^5.8.3",
+    "ts-loader": "^9.5.2",
+    "webpack": "^5.99.7",
+    "webpack-cli": "^6.0.1"
+  },
+  "repository": "https://github.com/johnbudnik/go-to-step-bdd.git",
+  "keywords": ["bdd", "gherkin", "cucumber", "pytest-bdd", "behave"]
+}
