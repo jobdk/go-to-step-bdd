@@ -3,7 +3,7 @@
   "displayName": "Go to BDD Step Definition",
   "description": "Navigate between feature files and step definitions in pytest-bdd and behave frameworks.",
   "version": "0.0.1",
-  "publisher": "John Budnik",
+  "publisher": "johnbudnik",
   "author": "John Budnik",
   "engines": {
     "vscode": "^1.100.0"

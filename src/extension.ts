@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
 
-// TODO: Fix debug log
+// Check if debug logs should be shown based on configuration
 function shouldShowDebugLogs(): boolean {
     return vscode.workspace.getConfiguration('goToBdd').get<boolean>('showDebugLogs', false);
 }
 
 function showDebugInfo(message: string): void {
-    console.log(message);
+    // TODO: Does work?
     if (shouldShowDebugLogs()) {
         vscode.window.showInformationMessage(`[Debug] ${message}`);
     }
@@ -60,23 +60,71 @@ function getTextBetweenParentheses(lines: string[], startLineIndex: number, open
  * Extract the first quoted string from text
  */
 function extractQuotedString(text: string): string {
-    // Try double quotes first
+    // showDebugInfo(`Extracting quoted string from: ${text}`);
+    
+    // For parse function, handle specifically first as it can have mixed quotes
+    // TODO: Might need a parse.parse( or sth similar
+    if (text.includes('parse(')) {
+
+        // EXTREME APPROACH: For parse with single quotes outside, just extract everything between them
+        if (text.includes("parse('")) {
+            const extremeMatch = text.match(/parse\s*\(\s*'([^']*)'/);
+            if (extremeMatch && extremeMatch[1]) {
+                return extremeMatch[1];
+            }
+        }
+
+        // Similarly for double quotes outside
+        if (text.includes('parse("')) {
+            const extremeMatch = text.match(/parse\s*\(\s*"([^"]*)"/);
+            if (extremeMatch && extremeMatch[1]) {
+                return extremeMatch[1];
+            }
+        }
+        
+        // Try for any parse with single quotes
+        const singleQuoteParseMatch = text.match(/parse\s*\(\s*'(.*)'/s);
+        if (singleQuoteParseMatch && singleQuoteParseMatch[1]) {
+            return singleQuoteParseMatch[1];
+        }
+        
+        // Try for any parse with double quotes
+        const doubleQuoteParseMatch = text.match(/parse\s*\(\s*"(.*)"/s);
+        if (doubleQuoteParseMatch && doubleQuoteParseMatch[1]) {
+            return doubleQuoteParseMatch[1];
+        }
+        
+        // Last Optin: try to extract anything between parse( and )
+        const lastOptionMatch = text.match(/parse\s*\(\s*(?:['"]?)([^)]+)(?:['"]?)\s*\)/);
+        if (lastOptionMatch && lastOptionMatch[1]) {
+            // Remove quotes at beginning and end if they exist
+            const cleanedResult = lastOptionMatch[1].replace(/^['"]|['"]$/g, '');
+            return cleanedResult;
+        }
+    }
+
+    // Try double quotes first (standard case)
     const doubleQuoteMatch = text.match(/"([^"\\]*(?:\\.[^"\\]*)*)"/);
     if (doubleQuoteMatch) {
         return doubleQuoteMatch[1];
     }
 
-    // Try single quotes if double quotes didn't match
+    // Try single quotes if double quotes didn't match (standard case)
     const singleQuoteMatch = text.match(/'([^'\\]*(?:\\.[^'\\]*)*)'/);
     if (singleQuoteMatch) {
         return singleQuoteMatch[1];
     }
 
+    // Last possible check - find the first quoted string of any kind
+    const anyQuoteMatch = text.match(/(['"])(.*?)\1/);
+    if (anyQuoteMatch) {
+        return anyQuoteMatch[2];
+    }
     return '';
 }
 
 /**
- * Clean up parse() function patterns
+ * Change pattern so it can be matched.
  */
 function makeParsePatternMatchable(pattern: string): string {
     // Replace escaped quotes with regular quotes
@@ -113,12 +161,8 @@ async function findAllStepDefinitions(): Promise<StepDefinition[]> {
         pythonFiles.push(...morePythonFiles);
     }
 
-    showDebugInfo(`Found ${pythonFiles.length} Python files to search for step definitions`);
-
     // Process each Python file to find step definitions
     for (const file of pythonFiles) {
-        showDebugInfo(`Searching for step definitions in ${file.fsPath}`);
-
         const document = await vscode.workspace.openTextDocument(file);
         const text = document.getText();
         const lines = text.split('\n');
@@ -131,7 +175,6 @@ async function findAllStepDefinitions(): Promise<StepDefinition[]> {
 
             if (decoratorMatch) {
                 const stepType = decoratorMatch[1].toLowerCase(); // given, when, or then
-                showDebugInfo(`Found ${stepType} decorator at line ${i}: ${line}`);
 
                 // Extract the step pattern
                 let stepPattern = '';
@@ -139,7 +182,7 @@ async function findAllStepDefinitions(): Promise<StepDefinition[]> {
                 // Get the full decorator text including parentheses
                 const fullDecoratorText = getTextBetweenParentheses(lines, i, line.indexOf('('));
                 if (!fullDecoratorText) {
-                    showDebugInfo(`⚠️ Could not extract balanced parentheses text from decorator at line ${i}`);
+                    showDebugInfo(`Could not extract balanced parentheses text from decorator at line ${i}`);
                     continue; // Skip this decorator if we can't extract the text
                 }
 
@@ -148,23 +191,33 @@ async function findAllStepDefinitions(): Promise<StepDefinition[]> {
                 // First try standard quoted string
                 stepPattern = extractQuotedString(fullDecoratorText);
 
-                // If normal pattern is found, is it within parse(?
+                // If normal pattern is found, is it within parse
                 if (stepPattern) {
-                    showDebugInfo(`Extracted standard pattern: "${stepPattern}"`);
-
                     // Check if this is a parse() function pattern
                     if (fullDecoratorText.includes('parse(')) {
                         // Clean up escaped characters in parse patterns
                         stepPattern = makeParsePatternMatchable(stepPattern);
-                        showDebugInfo(`Cleaned parse pattern: "${stepPattern}"`);
                     }
                 } else {
-                    showDebugInfo(`⚠️ Could not extract step pattern from decorator text: ${fullDecoratorText}`);
-                    continue;
+                    // Special case for parse function with mixed quotes
+                    if (fullDecoratorText.includes('parse(')) {
+                        // Try to extract the entire parse argument
+                        // Should handle both single and double quotes and also supports optional formatting arguments
+                        const parseMatch = fullDecoratorText.match(/parse\s*\(\s*(['"])((?:(?!\1).|\\.)*)(\1)(?:\s*,\s*\w+)?\s*\)/);
+                        if (parseMatch && parseMatch[2]) {
+                            stepPattern = parseMatch[2];
+                            stepPattern = makeParsePatternMatchable(stepPattern);
+                        } else {
+                            showDebugInfo(`Could not extract parse pattern with improved handling: ${fullDecoratorText}`);
+                        }
+                    } else {
+                        showDebugInfo(`Could not extract step pattern from decorator text: ${fullDecoratorText}`);
+                        continue;
+                    }
                 }
 
                 if (!stepPattern) {
-                    showDebugInfo(`⚠️ Could not extract step pattern from decorator at line ${i}`);
+                    showDebugInfo(`Could not extract step pattern from decorator at line ${i}`);
                     continue;
                 }
 
@@ -187,7 +240,6 @@ async function findAllStepDefinitions(): Promise<StepDefinition[]> {
                     if (funcMatch) {
                         functionName = funcMatch[1];
                         functionLine = j;
-                        showDebugInfo(`Found function: ${functionName} at line ${j}`);
                         break;
                     }
                 }
@@ -200,13 +252,11 @@ async function findAllStepDefinitions(): Promise<StepDefinition[]> {
                         lineNumber: functionLine,
                         functionName
                     });
-                    showDebugInfo(`Added step definition: ${stepType} "${stepPattern}" => ${functionName} at line ${functionLine}`);
                 }
             }
         }
     }
 
-    console.log(`Found ${stepDefinitions.length} total step definitions`);
     return stepDefinitions;
 }
 
@@ -220,9 +270,6 @@ function findMatchingStepDefinition(
 ): StepDefinition | undefined {
     // Normalize the step type
     const normalizedType = normalizeStepType(stepType);
-
-    showDebugInfo(`Looking for step match: "${stepText}" (type: ${normalizedType})`);
-
     const possibleMatches: StepDefinition[] = [];
 
     for (const def of stepDefinitions) {
@@ -235,35 +282,19 @@ function findMatchingStepDefinition(
 
         // 1. Exact match (case insensitive)
         if (stepText.toLowerCase() === stepPattern.toLowerCase()) {
-            showDebugInfo(`✅ EXACT MATCH: ${def.functionName}`);
             possibleMatches.push({...def, matchQuality: 5});
             continue;
         }
 
-        // 2. Pattern match (using regex)
-        try {
-            const regexPattern = convertStepPatternToRegex(stepPattern);
-            const regex = new RegExp(`^${regexPattern}$`, 'i');
-
-            if (regex.test(stepText)) {
-                showDebugInfo(`✅ PATTERN MATCH: ${def.functionName}`);
-                possibleMatches.push({...def, matchQuality: 4});
-                continue;
-            }
-        } catch (error) {
-            console.error(`Invalid regex pattern for "${stepPattern}":`, error);
-        }
-
-        // 3. Word similarity match
+        // 2. Word similarity match
         const similarity = calculateSimilarity(stepText, stepPattern);
         if (similarity >= 0.8) {
-            showDebugInfo(`✅ SIMILARITY MATCH (${Math.round(similarity * 100)}%): ${def.functionName}`);
             possibleMatches.push({...def, matchQuality: similarity * 3});
         }
     }
 
     if (possibleMatches.length === 0) {
-        showDebugInfo(`❌ No matching step definition found`);
+        showDebugInfo(`No matching step definition found`);
         return undefined;
     }
 
@@ -280,7 +311,7 @@ function findMatchingStepDefinition(
         return (b.matchQuality || 0) - (a.matchQuality || 0);
     });
 
-    showDebugInfo(`Found ${possibleMatches.length} matches, using best match: ${possibleMatches[0].functionName}`);
+    // showDebugInfo(`Found ${possibleMatches.length} matches, using best match: ${possibleMatches[0].functionName}`);
     return possibleMatches[0];
 }
 
@@ -288,24 +319,25 @@ function findMatchingStepDefinition(
  * Convert step pattern with {param} placeholders to regex
  */
 function convertStepPatternToRegex(pattern: string): string {
-    showDebugInfo(`Original pattern: "${pattern}"`);
-
+    // Normal handling for other patterns
     // Escape regex special characters except for { and }
     let regexPattern = pattern.replace(/[.*+?^$()|\[\]\\]/g, '\\$&');
 
     // Handle quoted parameters - convert "{param}" to a quoted value regex
-    regexPattern = regexPattern
-        .replace(/"({[^}:]+(?::[^}]+)?})"/g, '"([^"]*)"')
-        .replace(/'({[^}:]+(?::[^}]+)?})'/g, "'([^']*)'");
-
+    // Use a more direct approach for parameters inside quotes
+    regexPattern = regexPattern.replace(/"({[^}:]+(?::[^}]+)?})"/g, '"([^"]*)"');
+    regexPattern = regexPattern.replace(/'({[^}:]+(?::[^}]+)?})'/g, "'([^']*)'");
+    
     // Replace remaining {param} patterns with a regex group
-    regexPattern = regexPattern
-        .replace(/{([^}:]+)(?::[^}]+)?}/g, '([\\w\\._\\-A-Za-z0-9]+)');
+    // Handle typed parameters like {param:d} for digits
+    regexPattern = regexPattern.replace(/{([^}:]+):d}/g, '(\\d+)');
+    
+    // Handle remaining standard parameters
+    regexPattern = regexPattern.replace(/{([^}:]+)(?::[^}]+)?}/g, '([\\w\\._\\-A-Za-z0-9]+)');
 
     // Make whitespace more flexible
     regexPattern = regexPattern.replace(/\s+/g, '\\s+');
 
-    showDebugInfo(`Converted regex pattern: "${regexPattern}"`);
     return regexPattern;
 }
 
@@ -370,7 +402,6 @@ function normalizeStepType(stepType: string): string {
     }
 
     console.log(`WARNING: Unknown step type "${stepType}", defaulting to "given"`);
-    showDebugInfo(`WARNING: Unknown step type "${stepType}", defaulting to "given"`);
     return 'given'; // Default
 }
 
@@ -409,28 +440,22 @@ async function navigateToStepDefinition(editor: vscode.TextEditor) {
     // Extract the actual step text/description from the matched group
     const stepText = stepMatch[2];
 
-    vscode.window.showInformationMessage(`Looking for step: ${stepText}`);
+    // vscode.window.showInformationMessage(`Looking for step: ${stepText}`);
 
     // Find all step definitions
     // TODO: Caching?
     const stepDefinitions = await findAllStepDefinitions();
-    showDebugInfo(`Found ${stepDefinitions.length} step definitions`);
-
-    // Debugging
-    stepDefinitions.forEach((def, index) => {
-        showDebugInfo(`Step definition ${index + 1}: ${def.type} - "${def.pattern}" - ${def.functionName}`);
-    });
 
     // Find matching step definition
     const matchingDef = findMatchingStepDefinition(stepText, stepType, stepDefinitions);
 
     if (matchingDef) {
-        showDebugInfo(`----- FOUND MATCHING STEP DEFINITION -----`);
-        showDebugInfo(`Type: ${matchingDef.type}`);
-        showDebugInfo(`Pattern: ${matchingDef.pattern}`);
-        showDebugInfo(`Function: ${matchingDef.functionName}`);
-        showDebugInfo(`File: ${matchingDef.filePath}`);
-        showDebugInfo(`Line Number: ${matchingDef.lineNumber}`);
+        // showDebugInfo(`----- FOUND MATCHING STEP DEFINITION -----`);
+        // showDebugInfo(`Type: ${matchingDef.type}`);
+        // showDebugInfo(`Pattern: ${matchingDef.pattern}`);
+        // showDebugInfo(`Function: ${matchingDef.functionName}`);
+        // showDebugInfo(`File: ${matchingDef.filePath}`);
+        // showDebugInfo(`Line Number: ${matchingDef.lineNumber}`);
 
         // Open the file and navigate to the step definition
         const document = await vscode.workspace.openTextDocument(matchingDef.filePath);
@@ -445,8 +470,6 @@ async function navigateToStepDefinition(editor: vscode.TextEditor) {
         // Check to ensure we're at the right line
         const lineText = document.lineAt(actualLineNumber).text;
         if (!lineText.includes(`def ${matchingDef.functionName}`)) {
-            showDebugInfo(`Line ${actualLineNumber} does not contain the expected function definition: ${matchingDef.functionName}`);
-            showDebugInfo(`Line text: ${lineText}`);
 
             // Scan the document for the correct function definition
             let foundFunction = false;
@@ -455,7 +478,6 @@ async function navigateToStepDefinition(editor: vscode.TextEditor) {
                 if (text.includes(`def ${matchingDef.functionName}(`)) {
                     actualLineNumber = i;
                     foundFunction = true;
-                    showDebugInfo(`Found correct function at line ${i}: ${text}`);
                     break;
                 }
             }
@@ -466,7 +488,6 @@ async function navigateToStepDefinition(editor: vscode.TextEditor) {
                     const text = document.lineAt(i).text;
                     if (text.includes(`def ${matchingDef.functionName}`)) {
                         actualLineNumber = i;
-                        showDebugInfo(`Found approximate function match at line ${i}: ${text}`);
                         break;
                     }
                 }
@@ -481,7 +502,7 @@ async function navigateToStepDefinition(editor: vscode.TextEditor) {
             vscode.TextEditorRevealType.InCenter
         );
 
-        vscode.window.showInformationMessage(`Navigated to step implementation: ${matchingDef.functionName}`);
+        // vscode.window.showInformationMessage(`Navigated to step implementation: ${matchingDef.functionName}`);
     } else {
         // Add more detailed error information when debug logs are enabled
         if (shouldShowDebugLogs()) {
@@ -496,20 +517,17 @@ async function navigateToStepDefinition(editor: vscode.TextEditor) {
 export function activate(context: vscode.ExtensionContext) {
     console.log('Extension "go-to-step-bdd" is now active');
 
-    // Register command to navigate from feature to step definition
     const goToStepCommand = vscode.commands.registerTextEditorCommand(
         'go-to-step-bdd.goToStepDefinition',
         navigateToStepDefinition
     );
 
-    // Add code lens provider for feature files
     const codeLensProvider = new FeatureFileCodeLensProvider();
     const codeLensRegistration = vscode.languages.registerCodeLensProvider(
         {language: 'feature', scheme: 'file'},
         codeLensProvider
     );
 
-// Subscribe to the goToStep command and codeLens features so they can be disposed when extension deactivates
     context.subscriptions.push(goToStepCommand, codeLensRegistration);
 }
 
