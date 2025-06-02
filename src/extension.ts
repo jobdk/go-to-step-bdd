@@ -20,7 +20,7 @@ const STEP_DEFINITION_PATTERNS = {
 
 // Helper functions for step pattern extraction
 /**
- * Extract text between balanced parentheses
+ * Extract text between parentheses
  */
 function getTextBetweenParentheses(lines: string[], startLineIndex: number, openParenIndex: number): string {
     let fullText = lines[startLineIndex].substring(openParenIndex + 1);
@@ -35,7 +35,7 @@ function getTextBetweenParentheses(lines: string[], startLineIndex: number, open
             if (char === '(') openParenCount++;
             if (char === ')') openParenCount--;
 
-            // If we found the final closing parenthesis, cut the text 
+            // If found the final closing parenthesis, cut the text
             if (openParenCount === 0) {
                 fullText = fullText.substring(0, i);
                 break;
@@ -157,6 +157,7 @@ async function findAllStepDefinitions(): Promise<StepDefinition[]> {
 
     // If no files are found, try with just steps/ directories
     if (pythonFiles.length === 0) {
+        // Recursively search for Python files in steps directories
         const morePythonFiles = await vscode.workspace.findFiles('**/steps/**/*.py');
         pythonFiles.push(...morePythonFiles);
     }
@@ -280,7 +281,7 @@ function findMatchingStepDefinition(
 
         const stepPattern = def.pattern;
 
-        // 1. Exact match (case insensitive)
+        // 1. Exaact match (case insensitive)
         if (stepText.toLowerCase() === stepPattern.toLowerCase()) {
             possibleMatches.push({...def, matchQuality: 5});
             continue;
@@ -313,32 +314,6 @@ function findMatchingStepDefinition(
 
     // showDebugInfo(`Found ${possibleMatches.length} matches, using best match: ${possibleMatches[0].functionName}`);
     return possibleMatches[0];
-}
-
-/**
- * Convert step pattern with {param} placeholders to regex
- */
-function convertStepPatternToRegex(pattern: string): string {
-    // Normal handling for other patterns
-    // Escape regex special characters except for { and }
-    let regexPattern = pattern.replace(/[.*+?^$()|\[\]\\]/g, '\\$&');
-
-    // Handle quoted parameters - convert "{param}" to a quoted value regex
-    // Use a more direct approach for parameters inside quotes
-    regexPattern = regexPattern.replace(/"({[^}:]+(?::[^}]+)?})"/g, '"([^"]*)"');
-    regexPattern = regexPattern.replace(/'({[^}:]+(?::[^}]+)?})'/g, "'([^']*)'");
-    
-    // Replace remaining {param} patterns with a regex group
-    // Handle typed parameters like {param:d} for digits
-    regexPattern = regexPattern.replace(/{([^}:]+):d}/g, '(\\d+)');
-    
-    // Handle remaining standard parameters
-    regexPattern = regexPattern.replace(/{([^}:]+)(?::[^}]+)?}/g, '([\\w\\._\\-A-Za-z0-9]+)');
-
-    // Make whitespace more flexible
-    regexPattern = regexPattern.replace(/\s+/g, '\\s+');
-
-    return regexPattern;
 }
 
 /**
